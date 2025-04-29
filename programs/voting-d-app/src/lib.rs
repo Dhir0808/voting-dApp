@@ -7,7 +7,21 @@ pub mod voting_d_app {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
+        let global_state = &mut ctx.accounts.global_state;
+        global_state.authority = ctx.accounts.authority.key();
+        global_state.total_proposals = 0;
+        global_state.total_votes = 0;
+        global_state.total_users = 0;
+        global_state.minimum_voting_period = 3600; // 1 hour
+        global_state.maximum_voting_period = 604800; // 1 week
+        global_state.is_emergency_stopped = false;
+        global_state.emergency_stop_time = None;
+        global_state.bump = ctx.bumps.global_state;
+
+        msg!(
+            "Program initialized with authority: {:?}",
+            ctx.accounts.authority.key()
+        );
         Ok(())
     }
 
@@ -26,14 +40,13 @@ pub mod voting_d_app {
             options.len() >= 2 && options.len() <= 10,
             ErrorCode::InvalidOptionsCount
         );
-        require!(
-            start_time > Clock::get()?.unix_timestamp,
-            ErrorCode::InvalidStartTime
-        );
-        require!(end_time > start_time, ErrorCode::InvalidEndTime);
 
         // Get current timestamp
         let current_time = Clock::get()?.unix_timestamp;
+
+        // Allow start times that are within 60 seconds of the current time
+        require!(start_time >= current_time - 60, ErrorCode::InvalidStartTime);
+        require!(end_time > start_time, ErrorCode::InvalidEndTime);
 
         // Initialize proposal account
         let proposal = &mut ctx.accounts.proposal;
@@ -61,53 +74,43 @@ pub mod voting_d_app {
     }
 
     pub fn cast_vote(ctx: Context<CastVote>, option_index: u8, vote_weight: u64) -> Result<()> {
-        // Get current timestamp
-        let current_time = Clock::get()?.unix_timestamp;
+        let proposal = &mut ctx.accounts.proposal;
+        let vote = &mut ctx.accounts.vote;
+        let clock = Clock::get()?;
 
-        // Validate voting time
-        let proposal = &ctx.accounts.proposal;
+        // Check if proposal is active
         require!(
-            current_time >= proposal.start_time,
-            ErrorCode::VotingNotStarted
+            clock.unix_timestamp >= proposal.start_time
+                && clock.unix_timestamp <= proposal.end_time,
+            VotingError::ProposalNotActive
         );
-        require!(current_time <= proposal.end_time, ErrorCode::VotingEnded);
-        require!(proposal.is_active, ErrorCode::ProposalInactive);
 
         // Validate option index
         require!(
-            (option_index as usize) < proposal.options.len(),
-            ErrorCode::InvalidOptionIndex
+            option_index < proposal.options.len() as u8,
+            VotingError::InvalidOptionIndex
         );
 
         // Validate vote weight
-        require!(vote_weight > 0, ErrorCode::InvalidVoteWeight);
+        require!(vote_weight > 0, VotingError::InvalidVoteWeight);
 
-        // Initialize vote account
-        let vote = &mut ctx.accounts.vote;
+        // Check if user has already voted
+        require!(!vote.has_voted, VotingError::AlreadyVoted);
+
+        // Record the vote
         vote.voter = ctx.accounts.voter.key();
         vote.proposal = proposal.key();
         vote.option_index = option_index;
         vote.vote_weight = vote_weight;
-        vote.timestamp = current_time;
-        vote.bump = ctx.bumps.vote;
+        vote.timestamp = clock.unix_timestamp;
+        vote.has_voted = true;
 
-        // Update proposal vote count
-        let proposal = &mut ctx.accounts.proposal;
+        // Update proposal vote counts
         proposal.total_votes = proposal.total_votes.checked_add(vote_weight).unwrap();
+        proposal.vote_counts[option_index as usize] = proposal.vote_counts[option_index as usize]
+            .checked_add(vote_weight)
+            .unwrap();
 
-        // Update user profile
-        let user_profile = &mut ctx.accounts.user_profile;
-        user_profile.votes_cast = user_profile.votes_cast.checked_add(1).unwrap();
-
-        // Update global state
-        let global_state = &mut ctx.accounts.global_state;
-        global_state.total_votes = global_state.total_votes.checked_add(1).unwrap();
-
-        msg!(
-            "Vote cast for option {} with weight {}",
-            option_index,
-            vote_weight
-        );
         Ok(())
     }
 
@@ -162,10 +165,48 @@ pub mod voting_d_app {
         msg!("Operations resumed by authority");
         Ok(())
     }
+
+    pub fn initialize_user_profile(
+        ctx: Context<InitializeUserProfile>,
+        username: String,
+    ) -> Result<()> {
+        let user_profile = &mut ctx.accounts.user_profile;
+        user_profile.authority = ctx.accounts.authority.key();
+        user_profile.username = username;
+        user_profile.proposals_created = 0;
+        user_profile.votes_cast = 0;
+        user_profile.reputation = 0;
+        user_profile.created_at = Clock::get()?.unix_timestamp;
+        user_profile.bump = ctx.bumps.user_profile;
+
+        // Update global state
+        let global_state = &mut ctx.accounts.global_state;
+        global_state.total_users = global_state.total_users.checked_add(1).unwrap();
+
+        msg!(
+            "User profile initialized for: {:?}",
+            ctx.accounts.authority.key()
+        );
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
-pub struct Initialize {}
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 8 + 1,
+        seeds = [b"global_state"],
+        bump
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct CreateProposal<'info> {
@@ -206,7 +247,7 @@ pub struct CastVote<'info> {
 
     #[account(
         mut,
-        seeds = [b"proposal", proposal.authority.as_ref(), &proposal.created_at.to_le_bytes()],
+        seeds = [b"proposal", proposal.authority.as_ref(), &global_state.total_proposals.to_le_bytes()],
         bump = proposal.bump,
         constraint = !global_state.is_emergency_stopped @ ErrorCode::EmergencyStopActive
     )]
@@ -278,20 +319,45 @@ pub struct ResumeOperations<'info> {
     pub global_state: Account<'info, GlobalState>,
 }
 
+#[derive(Accounts)]
+pub struct InitializeUserProfile<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + 32 + 50 + 8 + 8 + 8 + 8 + 1,
+        seeds = [b"user_profile", authority.key().as_ref()],
+        bump
+    )]
+    pub user_profile: Account<'info, UserProfile>,
+
+    #[account(
+        mut,
+        seeds = [b"global_state"],
+        bump = global_state.bump
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    pub system_program: Program<'info, System>,
+}
+
 // Account to store proposal information
 #[account]
 pub struct Proposal {
     pub authority: Pubkey,         // The account that created the proposal
     pub title: String,             // Title of the proposal
-    pub description: String,       // Detailed description
+    pub description: String,       // Description of the proposal
     pub options: Vec<String>,      // List of voting options
-    pub start_time: i64,           // Unix timestamp for proposal start
-    pub end_time: i64,             // Unix timestamp for proposal end
+    pub start_time: i64,           // When voting starts
+    pub end_time: i64,             // When voting ends
     pub total_votes: u64,          // Total number of votes cast
-    pub is_active: bool,           // Whether the proposal is currently active
-    pub created_at: i64,           // Creation timestamp
+    pub is_active: bool,           // Whether the proposal is active
+    pub created_at: i64,           // When the proposal was created
     pub finalized_at: Option<i64>, // Timestamp when proposal was finalized
     pub bump: u8,                  // Bump seed for PDA
+    pub vote_counts: Vec<u64>,     // Vote counts for each option
 }
 
 // Account to store individual votes
@@ -300,9 +366,10 @@ pub struct Vote {
     pub voter: Pubkey,    // The account that cast the vote
     pub proposal: Pubkey, // Reference to the proposal
     pub option_index: u8, // Index of the chosen option
-    pub vote_weight: u64, // Weight of the vote (for future token-weighted voting)
+    pub vote_weight: u64, // Weight of the vote
     pub timestamp: i64,   // When the vote was cast
     pub bump: u8,         // Bump seed for PDA
+    pub has_voted: bool,  // Whether the user has voted
 }
 
 // Account to store user profile information
@@ -361,4 +428,20 @@ pub enum ErrorCode {
     UnauthorizedAccess,
     #[msg("Emergency stop is active")]
     EmergencyStopActive,
+    #[msg("Proposal not active")]
+    ProposalNotActive,
+    #[msg("Vote count overflow")]
+    VoteCountOverflow,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Proposal is not active")]
+    ProposalNotActive,
+    #[msg("Invalid option index")]
+    InvalidOptionIndex,
+    #[msg("Invalid vote weight")]
+    InvalidVoteWeight,
+    #[msg("You have already voted on this proposal")]
+    AlreadyVoted,
 }

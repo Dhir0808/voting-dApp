@@ -1,146 +1,140 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import React, { useEffect, useState } from "react";
+import { useProgram } from "../../hooks/useProgram";
+import { Proposal } from "../../types/proposal";
+import { VoteForm } from "./VoteForm";
+import { useError } from "../../contexts/ErrorContext";
+import {
+  ErrorType,
+  ErrorCategory,
+  ErrorCodes,
+} from "../../utils/errorHandling";
 
-// Mock data for demonstration
-const mockProposals = [
-  {
-    id: "1",
-    title: "Should we upgrade the community center?",
-    description:
-      "Proposal to upgrade the community center with new facilities.",
-    options: ["Yes", "No", "Maybe"],
-    startTime: Date.now() / 1000,
-    endTime: (Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000,
-    totalVotes: 42,
-    isActive: true,
-  },
-  {
-    id: "2",
-    title: "New community garden project",
-    description: "Creating a new community garden in the downtown area.",
-    options: ["Approve", "Reject", "Modify"],
-    startTime: (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000,
-    endTime: (Date.now() + 5 * 24 * 60 * 60 * 1000) / 1000,
-    totalVotes: 78,
-    isActive: true,
-  },
-  {
-    id: "3",
-    title: "Community budget allocation 2023",
-    description: "How should we allocate the community budget for 2023?",
-    options: ["Education", "Infrastructure", "Healthcare", "Environment"],
-    startTime: (Date.now() - 10 * 24 * 60 * 60 * 1000) / 1000,
-    endTime: (Date.now() - 3 * 24 * 60 * 60 * 1000) / 1000,
-    totalVotes: 156,
-    isActive: false,
-  },
-];
+type FilterType = "all" | "active" | "ended";
 
-export function ProposalList() {
-  const [proposals, setProposals] = useState(mockProposals);
-  const [filter, setFilter] = useState("all"); // 'all', 'active', 'ended'
+export const ProposalList: React.FC = () => {
+  const { getAllProposals, isLoading } = useProgram();
+  const { addError } = useError();
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [refreshing, setRefreshing] = useState(false);
 
-  // In a real app, we would fetch proposals from the blockchain
+  const fetchProposals = async () => {
+    try {
+      const fetchedProposals = await getAllProposals();
+      setProposals(fetchedProposals);
+    } catch (error) {
+      addError(error);
+    }
+  };
+
   useEffect(() => {
-    // Fetch proposals from the blockchain
-    // setProposals(fetchedProposals);
+    fetchProposals();
   }, []);
 
+  const handleVoteCast = async () => {
+    setRefreshing(true);
+    await fetchProposals();
+    setRefreshing(false);
+  };
+
   const filteredProposals = proposals.filter((proposal) => {
-    if (filter === "active") return proposal.isActive;
-    if (filter === "ended") return !proposal.isActive;
+    const now = Math.floor(Date.now() / 1000);
+    if (filter === "active") {
+      return now >= proposal.startTime && now <= proposal.endTime;
+    } else if (filter === "ended") {
+      return now > proposal.endTime;
+    }
     return true;
   });
 
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    return new Date(timestamp * 1000).toLocaleString();
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Proposals</h2>
-        <div className="flex space-x-2">
+        <h2 className="text-2xl font-bold">Proposals</h2>
+        <div className="space-x-2">
           <button
-            onClick={() => setFilter("all")}
-            className={`px-3 py-1 rounded ${
+            className={`px-4 py-2 rounded-lg ${
               filter === "all"
-                ? "bg-primary text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                ? "bg-blue-500 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
+            onClick={() => setFilter("all")}
           >
             All
           </button>
           <button
-            onClick={() => setFilter("active")}
-            className={`px-3 py-1 rounded ${
+            className={`px-4 py-2 rounded-lg ${
               filter === "active"
-                ? "bg-primary text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                ? "bg-blue-500 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
+            onClick={() => setFilter("active")}
           >
             Active
           </button>
           <button
-            onClick={() => setFilter("ended")}
-            className={`px-3 py-1 rounded ${
+            className={`px-4 py-2 rounded-lg ${
               filter === "ended"
-                ? "bg-primary text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                ? "bg-blue-500 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
+            onClick={() => setFilter("ended")}
           >
             Ended
           </button>
         </div>
       </div>
 
-      {filteredProposals.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No proposals found</div>
+      {isLoading ? (
+        <div className="text-center py-8">
+          <p className="text-gray-600">Loading proposals...</p>
+        </div>
+      ) : filteredProposals.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-gray-600">No proposals found.</p>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredProposals.map((proposal) => (
-            <Link
-              key={proposal.id}
-              href={`/proposals/${proposal.id}`}
-              className="block bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow"
+            <div
+              key={proposal.publicKey.toString()}
+              className="bg-white rounded-lg shadow-md overflow-hidden"
             >
-              <div className="flex justify-between items-start">
-                <h3 className="text-lg font-medium text-gray-900">
-                  {proposal.title}
-                </h3>
-                <span
-                  className={`px-2 py-1 text-xs rounded ${
-                    proposal.isActive
-                      ? "bg-green-100 text-green-800"
-                      : "bg-gray-100 text-gray-800"
-                  }`}
-                >
-                  {proposal.isActive ? "Active" : "Ended"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-gray-600 line-clamp-2">
-                {proposal.description}
-              </p>
-              <div className="mt-4 flex justify-between items-center text-sm text-gray-500">
-                <div>
-                  {proposal.options.length} options • {proposal.totalVotes}{" "}
-                  votes
+              <div className="p-6">
+                <h3 className="text-xl font-semibold mb-2">{proposal.title}</h3>
+                <p className="text-gray-600 mb-4">{proposal.description}</p>
+                <div className="space-y-2 mb-4">
+                  <p className="text-sm text-gray-500">
+                    Start: {formatDate(proposal.startTime)}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    End: {formatDate(proposal.endTime)}
+                  </p>
                 </div>
-                <div>
-                  {formatDate(proposal.startTime)} -{" "}
-                  {formatDate(proposal.endTime)}
+                <div className="space-y-2">
+                  {proposal.options.map((option, index) => (
+                    <div
+                      key={index}
+                      className="p-2 bg-gray-50 rounded-lg text-gray-700"
+                    >
+                      {option}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </Link>
+              <div className="border-t">
+                <VoteForm proposal={proposal} onVoteCast={handleVoteCast} />
+              </div>
+            </div>
           ))}
         </div>
       )}
     </div>
   );
-}
+};

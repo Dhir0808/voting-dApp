@@ -1,15 +1,13 @@
+"use client";
+
 import { Inter } from "next/font/google";
-import { WalletProvider } from "../components/WalletProvider";
+import "./globals.css";
+import { WalletProvider } from "../providers/WalletProvider";
+import { ErrorProvider, ErrorBoundary } from "../contexts/ErrorContext";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
-import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
-
-export const metadata = {
-  title: "Voting dApp",
-  description: "A simple decentralized voting application",
-};
 
 export default function RootLayout({
   children,
@@ -20,11 +18,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <WalletProvider>
-          <div className="flex flex-col min-h-screen">
-            <Header />
-            <main className="flex-grow bg-gray-50 py-8">{children}</main>
-            <Footer />
-          </div>
+          <ErrorProvider>
+            <ErrorBoundary>
+              <div className="min-h-screen flex flex-col">
+                <Header />
+                <main className="flex-1 container mx-auto px-4 py-8">
+                  {children}
+                </main>
+                <Footer />
+              </div>
+            </ErrorBoundary>
+          </ErrorProvider>
         </WalletProvider>
       </body>
     </html>

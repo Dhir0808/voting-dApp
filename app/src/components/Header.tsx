@@ -1,12 +1,11 @@
 "use client";
 
-import { useWallet } from "@solana/wallet-adapter-react";
+import { FC } from "react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export function Header() {
-  const { connected } = useWallet();
+export const Header: FC = () => {
   const pathname = usePathname();
 
   const navItems = [
@@ -16,34 +15,28 @@ export function Header() {
   ];
 
   return (
-    <header className="bg-white shadow-sm">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center space-x-8">
-            <Link href="/" className="text-2xl font-bold text-primary">
-              Voting dApp
+    <header className="flex justify-between items-center p-4 bg-gray-800 text-white">
+      <div className="flex items-center space-x-6">
+        <Link href="/" className="text-xl font-bold hover:text-gray-300">
+          Voting dApp
+        </Link>
+        <nav className="hidden md:flex space-x-4">
+          {navItems.map((item) => (
+            <Link
+              key={item.path}
+              href={item.path}
+              className={`hover:text-gray-300 ${
+                pathname === item.path
+                  ? "text-primary"
+                  : "text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              {item.name}
             </Link>
-            {connected && (
-              <nav className="hidden md:flex space-x-6">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.path}
-                    href={item.path}
-                    className={`text-sm font-medium ${
-                      pathname === item.path
-                        ? "text-primary"
-                        : "text-gray-500 hover:text-gray-900"
-                    }`}
-                  >
-                    {item.name}
-                  </Link>
-                ))}
-              </nav>
-            )}
-          </div>
-          <WalletMultiButton />
-        </div>
+          ))}
+        </nav>
       </div>
+      <WalletMultiButton className="!bg-blue-600 hover:!bg-blue-700" />
     </header>
   );
-}
+};
