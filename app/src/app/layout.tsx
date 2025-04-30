@@ -16,14 +16,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-gray-50`}>
         <WalletProvider>
           <ErrorProvider>
             <ErrorBoundary>
               <div className="min-h-screen flex flex-col">
                 <Header />
-                <main className="flex-1 container mx-auto px-4 py-8">
-                  {children}
+                <main className="flex-1 container mx-auto px-4 py-8 max-w-7xl">
+                  <div className="backdrop-blur-sm bg-white/30 rounded-2xl shadow-xl border border-white/20 p-6">
+                    {children}
+                  </div>
                 </main>
                 <Footer />
               </div>

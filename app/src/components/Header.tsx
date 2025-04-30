@@ -1,42 +1,84 @@
 "use client";
 
-import { FC } from "react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export const Header: FC = () => {
+export function Header() {
   const pathname = usePathname();
 
-  const navItems = [
-    { name: "Home", path: "/" },
-    { name: "Proposals", path: "/proposals" },
-    { name: "My Votes", path: "/my-votes" },
-  ];
+  const isActive = (path: string) => {
+    return pathname === path
+      ? "text-blue-500 font-semibold"
+      : "text-gray-600 hover:text-gray-900";
+  };
 
   return (
-    <header className="flex justify-between items-center p-4 bg-gray-800 text-white">
-      <div className="flex items-center space-x-6">
-        <Link href="/" className="text-xl font-bold hover:text-gray-300">
-          Voting dApp
-        </Link>
-        <nav className="hidden md:flex space-x-4">
-          {navItems.map((item) => (
+    <header className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/80">
+      <div className="container mx-auto px-4 py-4 max-w-7xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-8">
             <Link
-              key={item.path}
-              href={item.path}
-              className={`hover:text-gray-300 ${
-                pathname === item.path
-                  ? "text-primary"
-                  : "text-gray-500 hover:text-gray-900"
-              }`}
+              href="/"
+              className="text-2xl font-bold text-blue-500 hover:text-blue-600 transition-colors"
             >
-              {item.name}
+              VotingDApp
             </Link>
-          ))}
+            <nav className="hidden md:flex items-center space-x-6">
+              <Link
+                href="/"
+                className={`${isActive("/")} transition-colors duration-200`}
+              >
+                Home
+              </Link>
+              <Link
+                href="/proposals"
+                className={`${isActive(
+                  "/proposals"
+                )} transition-colors duration-200`}
+              >
+                Proposals
+              </Link>
+              <Link
+                href="/create"
+                className={`${isActive(
+                  "/create"
+                )} transition-colors duration-200`}
+              >
+                Create
+              </Link>
+            </nav>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 transition-colors duration-200 !rounded-lg" />
+          </div>
+        </div>
+
+        {/* Mobile Navigation */}
+        <nav className="md:hidden flex items-center justify-around mt-4 pb-2">
+          <Link
+            href="/"
+            className={`${isActive("/")} transition-colors duration-200`}
+          >
+            Home
+          </Link>
+          <Link
+            href="/proposals"
+            className={`${isActive(
+              "/proposals"
+            )} transition-colors duration-200`}
+          >
+            Proposals
+          </Link>
+          <Link
+            href="/create"
+            className={`${isActive("/create")} transition-colors duration-200`}
+          >
+            Create
+          </Link>
         </nav>
       </div>
-      <WalletMultiButton className="!bg-blue-600 hover:!bg-blue-700" />
     </header>
   );
-};
+}
